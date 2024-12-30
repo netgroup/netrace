@@ -12,5 +12,6 @@
 /ksyscall
 /task_iter
 /lsm
+/netrace
 /cmake-build-debug/
 /cmake-build-release/
