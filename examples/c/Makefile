@@ -1,9 +1,14 @@
 # SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 OUTPUT := .output
 CLANG ?= clang
+
 LIBBPF_SRC := $(abspath ../../libbpf/src)
 BPFTOOL_SRC := $(abspath ../../bpftool/src)
-LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
+CJSON_SRC := $(abspath ../../cJSON)
+
+LIBBPF_OBJ :=  $(abspath $(OUTPUT)/libbpf.a)
+CJSON_OBJ := $(abspath $(OUTPUT)/libcjson.a)
+
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
 LIBBLAZESYM_SRC := $(abspath ../../blazesym/)
@@ -76,7 +81,7 @@ clean:
 	$(call msg,CLEAN)
 	$(Q)rm -rf $(OUTPUT) $(APPS)
 
-$(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
+$(OUTPUT) $(OUTPUT)/libbpf $(OUTPUT)/cjson $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
 	$(Q)mkdir -p $@
 
@@ -87,6 +92,13 @@ $(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch] $(LIBBPF_SRC)/Makefile) | $(OUTPU
 		    OBJDIR=$(dir $@)/libbpf DESTDIR=$(dir $@)		      \
 		    INCLUDEDIR= LIBDIR= UAPIDIR=			      \
 		    install
+
+$(CJSON_OBJ): $(wildcard $(CJSON_SRC)/*.[ch] $(CJSON_SRC)/Makefile) | $(OUTPUT)/cjson
+	$(call msg,LIB,$@)
+	$(Q)$(MAKE) -j1 -C $(CJSON_SRC) PREFIX=/cjson DESTDIR=$(dir $@) INCLUDE_PATH=. all install
+	$(call msg,COPY LIB,$@)
+	@cp -a $(CJSON_SRC)/libcjson.a $(dir $@)/libcjson.a
+	@cp -a $(CJSON_SRC)/libcjson_utils.a $(dir $@)/libcjson_utils.a
 
 # Build bpftool
 $(BPFTOOL): | $(BPFTOOL_OUTPUT)
@@ -126,7 +138,7 @@ $(patsubst %,$(OUTPUT)/%.o,$(BZS_APPS)): $(LIBBLAZESYM_OBJ)
 $(BZS_APPS): $(LIBBLAZESYM_OBJ)
 
 # Build application binary
-$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
+$(APPS): %: $(OUTPUT)/%.o $(CJSON_OBJ) $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
 

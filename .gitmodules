@@ -7,3 +7,6 @@
 [submodule "blazesym"]
 	path = blazesym
 	url = https://github.com/libbpf/blazesym.git
+[submodule "cJSON"]
+	path = cJSON
+	url = https://github.com/DaveGamble/cJSON.git
