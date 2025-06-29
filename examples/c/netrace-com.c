@@ -10,8 +10,9 @@
 #include <bpf/bpf.h>
 #include <cjson/cJSON.h>
 
-#include "netrace-com.skel.h"
-#include "netrace-com.h"
+// [HEADER] - Switch to netrace-com skeleton and header (refactor)
+#include "netrace-com.skel.h"   // Uses the new skeleton matching updated BPF
+#include "netrace-com.h"        // Uses the new header with extended struct
 
 #define INTERVAL_IN_SEC		1
 #define LOAD_PERC_TH		((double)0.01)
@@ -42,12 +43,13 @@ static void sig_int(int signo)
 	stop = 1;
 }
 
+// [RECORD STRUCT] - Add per-CPU delay and average fields for delay tracking (feat)
 struct record {
 	__u64 ts;
 	__u64 *pcpu_event_total_time[EVENT_TYPE_MAX + 1];
-	__u64 *pcpu_last_delay_ns;   // new: last delay for each CPU
-	__u64 *pcpu_delay_total;     // new: sum of delays for each CPU
-	__u64 *pcpu_delay_count;     // new: count of delays for each CPU
+	__u64 *pcpu_last_delay_ns;   // Latest observed delay per CPU (ns)
+	__u64 *pcpu_delay_total;     // Cumulative delay per CPU (for avg)
+	__u64 *pcpu_delay_count;     // Number of delay samples per CPU
 };
 
 static double eval_period(struct record *cur, struct record *prev)
@@ -75,13 +77,13 @@ static int map_get_value_pcpu_array(int fd, __u32 key, struct record *rec)
 		return rc;
 	}
 
-	/* for each different event, let's copy the pcpu counters */
+	// [MAP FILL] - Fill standard and delay statistics from BPF map (feat)
 	for (event_idx = 0; event_idx < EVENT_TYPE_MAX + 1; ++event_idx) {
 		pcpu_tt = rec->pcpu_event_total_time[event_idx];
 		for (cpu_idx = 0; cpu_idx < nr_cpus; ++cpu_idx)
 			pcpu_tt[cpu_idx] = pinfos[cpu_idx].event_total_time[event_idx];
 	}
-	// new: fill delay arrays
+	// [MAP FILL] - New: Populate delay/avg statistics from BPF to user-space (feat)
 	for (cpu_idx = 0; cpu_idx < nr_cpus; ++cpu_idx) {
 		rec->pcpu_last_delay_ns[cpu_idx] = pinfos[cpu_idx].last_delay_ns;
 		rec->pcpu_delay_total[cpu_idx]   = pinfos[cpu_idx].delay_total;
@@ -111,6 +113,7 @@ static int stat_collect(int fd, __u32 key, struct record *rec)
 	return map_get_value_pcpu_array(fd, key, rec);
 }
 
+// [ALLOC/FREE] - Free memory for per-CPU delay fields (fix)
 static void free_record(struct record *rec)
 {
 	__u64 *pcpu_tt;
@@ -131,6 +134,7 @@ static void free_record(struct record *rec)
 	free(rec);
 }
 
+// [ALLOC/FREE] - Allocate memory for per-CPU delay fields (fix)
 static struct record *alloc_record(void)
 {
 	unsigned int nr_cpus;
@@ -149,7 +153,6 @@ static struct record *alloc_record(void)
 			goto cleanup;
 		rec->pcpu_event_total_time[i] = pcpu_tt;
 	}
-	// new: alloc delay arrays
 	rec->pcpu_last_delay_ns = calloc(1, nr_cpus * sizeof(__u64));
 	rec->pcpu_delay_total = calloc(1, nr_cpus * sizeof(__u64));
 	rec->pcpu_delay_count = calloc(1, nr_cpus * sizeof(__u64));
@@ -176,7 +179,7 @@ static double eval_load_perc(__u64 val_ns, double period)
 	return ((val_ns / (double)NANOSEC_PER_SEC) / period) * 100.0;
 }
 
-// --- Delay print section: change here for custom output ---
+// [PRINT] - Print per-CPU last and average delay (feat)
 static void stats_print(struct record *prev, struct record *rec)
 {
 	unsigned int nr_cpus = libbpf_num_possible_cpus();
@@ -199,7 +202,7 @@ static void stats_print(struct record *prev, struct record *rec)
 			load = eval_load_perc(tdiff_ns, period);
 			if (load < LOAD_PERC_TH)
 				continue;
-			// NEW: print delay info
+			// Print delay and avg delay per CPU (ms)
 			double last_delay_ms = (double)rec->pcpu_last_delay_ns[cpu_idx] / 1e6;
 			double avg_delay_ms = 0;
 			if (rec->pcpu_delay_count[cpu_idx])
@@ -250,21 +253,22 @@ cleanup:
 	return rc;
 }
 
+// [MAIN] - Update skeleton usage to netrace_com_bpf (refactor)
 int main(int argc, char **argv)
 {
-	struct netrace_com_bpf *skel;   // ← تغییر نام ساختار اسکلتون
+	struct netrace_com_bpf *skel;    // Use the new skeleton type
 	int pcpu_fd;
 	int err;
 
 	libbpf_set_print(libbpf_print_fn);
 
-	skel = netrace_com_bpf__open_and_load();  // ← تغییر نام تابع اسکلتون
+	skel = netrace_com_bpf__open_and_load();   // Open skeleton with new name
 	if (!skel) {
 		fprintf(stderr, "Failed to open BPF skeleton\n");
 		return 1;
 	}
 
-	err = netrace_com_bpf__attach(skel);      // ← تغییر نام تابع اسکلتون
+	err = netrace_com_bpf__attach(skel);       // Attach skeleton with new name
 	if (err) {
 		fprintf(stderr, "Failed to attach BPF skeleton\n");
 		goto cleanup;
@@ -289,7 +293,6 @@ int main(int argc, char **argv)
 	err = 0;
 
 cleanup:
-	netrace_com_bpf__destroy(skel);           // ← تغییر نام تابع اسکلتون
+	netrace_com_bpf__destroy(skel);    // Destroy skeleton with new name
 	return -err;
 }
-
